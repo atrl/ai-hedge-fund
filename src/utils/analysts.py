@@ -8,6 +8,7 @@ from agents.fundamentals import fundamentals_agent
 from agents.michael_burry import michael_burry_agent
 from agents.phil_fisher import phil_fisher_agent
 from agents.peter_lynch import peter_lynch_agent
+from agents.ray_dalio import ray_dalio_agent
 from agents.sentiment import sentiment_agent
 from agents.stanley_druckenmiller import stanley_druckenmiller_agent
 from agents.technicals import technical_analyst_agent
@@ -51,35 +52,40 @@ ANALYST_CONFIG = {
         "agent_func": phil_fisher_agent,
         "order": 6,
     },
+    "ray_dalio": {
+        "display_name": "Ray Dalio",
+        "agent_func": ray_dalio_agent,
+        "order": 7,
+    },
     "stanley_druckenmiller": {
         "display_name": "Stanley Druckenmiller",
         "agent_func": stanley_druckenmiller_agent,
-        "order": 7,
+        "order": 8,
     },
     "warren_buffett": {
         "display_name": "Warren Buffett",
         "agent_func": warren_buffett_agent,
-        "order": 8,
+        "order": 9,
     },
     "technical_analyst": {
         "display_name": "Technical Analyst",
         "agent_func": technical_analyst_agent,
-        "order": 9,
+        "order": 10,
     },
     "fundamentals_analyst": {
         "display_name": "Fundamentals Analyst",
         "agent_func": fundamentals_agent,
-        "order": 10,
+        "order": 11,
     },
     "sentiment_analyst": {
         "display_name": "Sentiment Analyst",
         "agent_func": sentiment_agent,
-        "order": 11,
+        "order": 12,
     },
     "valuation_analyst": {
         "display_name": "Valuation Analyst",
         "agent_func": valuation_agent,
-        "order": 12,
+        "order": 13,
     },
 }
 
