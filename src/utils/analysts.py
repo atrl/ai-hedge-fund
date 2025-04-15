@@ -13,6 +13,7 @@ from agents.stanley_druckenmiller import stanley_druckenmiller_agent
 from agents.technicals import technical_analyst_agent
 from agents.valuation import valuation_agent
 from agents.warren_buffett import warren_buffett_agent
+from agents.whitney_george import whitney_george_agent
 
 # Define analyst configuration - single source of truth
 ANALYST_CONFIG = {
@@ -61,25 +62,30 @@ ANALYST_CONFIG = {
         "agent_func": warren_buffett_agent,
         "order": 8,
     },
+    "whitney_george": {
+        "display_name": "Whitney George",
+        "agent_func": whitney_george_agent,
+        "order": 9,
+    },
     "technical_analyst": {
         "display_name": "Technical Analyst",
         "agent_func": technical_analyst_agent,
-        "order": 9,
+        "order": 10,
     },
     "fundamentals_analyst": {
         "display_name": "Fundamentals Analyst",
         "agent_func": fundamentals_agent,
-        "order": 10,
+        "order": 11,
     },
     "sentiment_analyst": {
         "display_name": "Sentiment Analyst",
         "agent_func": sentiment_agent,
-        "order": 11,
+        "order": 12,
     },
     "valuation_analyst": {
         "display_name": "Valuation Analyst",
         "agent_func": valuation_agent,
-        "order": 12,
+        "order": 13,
     },
 }
 
