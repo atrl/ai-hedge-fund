@@ -1,27 +1,24 @@
-from graph.state import AgentState, show_agent_reasoning
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
+"""Ray Dalio agent implementation."""
 import json
-from typing_extensions import Literal
+from typing import List, Dict, Any, Optional
+
+from langchain_core.prompts import ChatPromptTemplate
+
 from tools.api import get_financial_metrics, get_market_cap, search_line_items, get_economic_indicators
 from utils.llm import call_llm
-from utils.progress import progress
+from utils.progress import Progress
+from utils.models import RayDalioSignal
 
-class RayDalioSignal(BaseModel):
-    signal: Literal["bullish", "bearish", "neutral"]
-    confidence: float
-    reasoning: str
 
-def ray_dalio_agent(state: AgentState):
-    """Analyzes stocks using Ray Dalio's All Weather principles and LLM reasoning."""
-    data = state["data"]
-    end_date = data["end_date"]
-    tickers = data["tickers"]
-    
-    # Collect all analysis for LLM reasoning
-    analysis_data = {}
-    dalio_analysis = {}
+def ray_dalio_agent(
+    tickers: List[str],
+    end_date: str,
+    model_name: str,
+    model_provider: str,
+    progress: Progress,
+) -> Dict[str, Any]:
+    """Ray Dalio agent implementation."""
+    results = {}
     
     for ticker in tickers:
         progress.update_status("ray_dalio_agent", ticker, "Fetching financial metrics")
@@ -36,454 +33,196 @@ def ray_dalio_agent(state: AgentState):
                 "total_assets",
                 "total_liabilities",
                 "total_debt",
-                "cash_and_cash_equivalents",
-                "operating_cash_flow",
+                "cash_and_equivalents",  # Changed from cash_and_cash_equivalents
+                "operating_cashflow",    # Changed from operating_cash_flow
+                "free_cashflow",
                 "revenue",
+                "ebitda",
+                "interest_expense",
             ],
             end_date,
+            period="ttm",
+            limit=5,
         )
-        
-        progress.update_status("ray_dalio_agent", ticker, "Getting market cap")
-        # Get current market cap
-        market_cap = get_market_cap(ticker, end_date)
-        
-        progress.update_status("ray_dalio_agent", ticker, "Getting economic indicators")
-        # Get economic indicators
-        economic_indicators = get_economic_indicators(end_date)
         
         progress.update_status("ray_dalio_agent", ticker, "Analyzing economic environment")
-        # Analyze economic environment
-        environment_analysis = analyze_economic_environment(economic_indicators)
+        economic_indicators = get_economic_indicators(end_date)
         
-        progress.update_status("ray_dalio_agent", ticker, "Analyzing balance sheet strength")
-        # Analyze balance sheet strength
-        balance_sheet_analysis = analyze_balance_sheet(financial_line_items)
+        # Determine current economic environment
+        environment_type = determine_economic_environment(economic_indicators)
         
-        progress.update_status("ray_dalio_agent", ticker, "Analyzing cash flow stability")
-        # Analyze cash flow stability
-        cash_flow_analysis = analyze_cash_flow_stability(financial_line_items)
+        # Analyze company fundamentals
+        progress.update_status("ray_dalio_agent", ticker, "Analyzing fundamentals")
+        latest_metrics = metrics[0] if metrics else None
+        latest_financials = financial_line_items[0] if financial_line_items else None
         
-        progress.update_status("ray_dalio_agent", ticker, "Analyzing debt levels")
-        # Analyze debt levels
-        debt_analysis = analyze_debt_levels(financial_line_items)
-        
-        progress.update_status("ray_dalio_agent", ticker, "Analyzing environment fit")
-        # Analyze how well the stock fits the current economic environment
-        environment_fit_analysis = analyze_environment_fit(environment_analysis, metrics, financial_line_items)
-        
-        # Calculate total score
-        total_score = (
-            balance_sheet_analysis["score"] + 
-            cash_flow_analysis["score"] + 
-            debt_analysis["score"] + 
-            environment_fit_analysis["score"]
-        )
-        
-        max_possible_score = (
-            balance_sheet_analysis["max_score"] + 
-            cash_flow_analysis["max_score"] + 
-            debt_analysis["max_score"] + 
-            environment_fit_analysis["max_score"]
-        )
-        
-        # Generate trading signal based on total score
-        if total_score >= 0.75 * max_possible_score:
-            signal = "bullish"
-        elif total_score <= 0.3 * max_possible_score:
-            signal = "bearish"
-        else:
-            signal = "neutral"
-        
-        # Combine all analysis results
-        analysis_data[ticker] = {
-            "economic_environment": environment_analysis,
-            "balance_sheet_strength": balance_sheet_analysis,
-            "cash_flow_stability": cash_flow_analysis,
-            "debt_levels": debt_analysis,
-            "environment_fit": environment_fit_analysis,
-            "total_score": total_score,
-            "max_possible_score": max_possible_score,
-            "score_percentage": total_score / max_possible_score if max_possible_score > 0 else 0,
-            "preliminary_signal": signal,
-            "market_cap": market_cap,
+        # Prepare analysis data
+        analysis_data = {
+            "economic_environment": {
+                "type": environment_type,
+                "indicators": economic_indicators.get("indicators", {}) if economic_indicators else {},
+            },
+            "fundamentals": {
+                "debt_to_equity": getattr(latest_metrics, "debt_to_equity", None),
+                "current_ratio": getattr(latest_metrics, "current_ratio", None),
+                "return_on_equity": getattr(latest_metrics, "return_on_equity", None),
+                "price_to_earnings": getattr(latest_metrics, "price_to_earnings", None),
+                "dividend_yield": getattr(latest_metrics, "dividend_yield", None),
+                "market_cap": get_market_cap(ticker, end_date),
+            },
+            "financial_health": analyze_financial_health(latest_metrics, latest_financials),
+            "cash_flow_stability": analyze_cash_flow_stability(latest_financials),
+            "environment_fit": analyze_environment_fit(environment_type, latest_metrics, latest_financials),
         }
         
-        # Get LLM reasoning
-        metadata = state["metadata"]
-        model_name = metadata.get("model_name", "gpt-4o")
-        model_provider = metadata.get("model_provider", "OpenAI")
-        
+        # Generate output
         progress.update_status("ray_dalio_agent", ticker, "Generating investment signal")
-        dalio_signal = generate_dalio_output(ticker, analysis_data[ticker], model_name, model_provider)
-        dalio_analysis[ticker] = dalio_signal
+        signal = generate_dalio_output(ticker, analysis_data, model_name, model_provider)
+        
+        results[ticker] = signal.model_dump()
     
-    # Add to analyst signals
-    state["data"]["analyst_signals"]["ray_dalio"] = dalio_analysis
-    
-    # Show reasoning if requested
-    if state["metadata"].get("show_reasoning", False):
-        show_agent_reasoning(state, "ray_dalio", dalio_analysis)
-    
-    return state
+    return results
 
-def analyze_economic_environment(economic_indicators: dict) -> dict:
-    """Analyzes the current economic environment based on indicators."""
-    # Default values
-    growth_trend = "stable"
-    inflation_trend = "stable"
-    environment_type = "stable growth, stable inflation"
+
+def determine_economic_environment(economic_indicators: Optional[Dict[str, Any]]) -> str:
+    """Determine the current economic environment based on indicators."""
+    if not economic_indicators or "indicators" not in economic_indicators:
+        return "unknown"
     
-    # Extract indicators
-    indicators = economic_indicators.get("indicators", {})
+    indicators = economic_indicators["indicators"]
     gdp_growth = indicators.get("gdp_growth", 0)
     inflation_rate = indicators.get("inflation_rate", 0)
-    interest_rate = indicators.get("interest_rate", 0)
-    unemployment_rate = indicators.get("unemployment_rate", 0)
     
-    # Determine growth trend
-    if gdp_growth > 3:
-        growth_trend = "rising"
-    elif gdp_growth < 1:
-        growth_trend = "falling"
-    
-    # Determine inflation trend
-    if inflation_rate > 3:
-        inflation_trend = "rising"
-    elif inflation_rate < 1:
-        inflation_trend = "falling"
-    
-    # Determine environment type
-    if growth_trend == "rising" and inflation_trend == "rising":
-        environment_type = "rising growth, rising inflation"
-    elif growth_trend == "rising" and inflation_trend == "falling":
-        environment_type = "rising growth, falling inflation"
-    elif growth_trend == "falling" and inflation_trend == "rising":
-        environment_type = "falling growth, rising inflation"
-    elif growth_trend == "falling" and inflation_trend == "falling":
-        environment_type = "falling growth, falling inflation"
-    
-    # Determine risk parity allocation based on environment
-    risk_parity = {
-        "equities": 0.25,
-        "bonds": 0.25,
-        "commodities": 0.25,
-        "cash": 0.25
-    }
-    
-    if environment_type == "rising growth, rising inflation":
-        risk_parity = {
-            "equities": 0.30,
-            "bonds": 0.15,
-            "commodities": 0.40,
-            "cash": 0.15
-        }
-    elif environment_type == "rising growth, falling inflation":
-        risk_parity = {
-            "equities": 0.40,
-            "bonds": 0.30,
-            "commodities": 0.15,
-            "cash": 0.15
-        }
-    elif environment_type == "falling growth, rising inflation":
-        risk_parity = {
-            "equities": 0.15,
-            "bonds": 0.15,
-            "commodities": 0.40,
-            "cash": 0.30
-        }
-    elif environment_type == "falling growth, falling inflation":
-        risk_parity = {
-            "equities": 0.15,
-            "bonds": 0.40,
-            "commodities": 0.15,
-            "cash": 0.30
-        }
-    
-    return {
-        "growth_trend": growth_trend,
-        "inflation_trend": inflation_trend,
-        "environment_type": environment_type,
-        "risk_parity": risk_parity,
-        "indicators": indicators
-    }
+    # Simplified environment determination based on growth and inflation
+    if gdp_growth >= 2.0:
+        if inflation_rate >= 2.5:
+            return "rising growth, rising inflation"
+        else:
+            return "rising growth, falling inflation"
+    else:
+        if inflation_rate >= 2.5:
+            return "falling growth, rising inflation"
+        else:
+            return "falling growth, falling inflation"
 
-def analyze_balance_sheet(financial_line_items: list) -> dict:
-    """Analyzes balance sheet strength based on financial line items."""
+
+def analyze_financial_health(latest_metrics: Any, latest_financials: Any) -> Dict[str, Any]:
+    """Analyze the financial health of the company."""
     score = 0
+    max_score = 3
     reasoning = []
     
-    if not financial_line_items:
-        return {
-            "score": 0,
-            "max_score": 3,
-            "details": "No financial data available for balance sheet analysis",
-        }
-    
-    latest = financial_line_items[0]
-    
-    # Check cash position
-    if hasattr(latest, "cash_and_cash_equivalents") and hasattr(latest, "total_assets") and latest.cash_and_cash_equivalents is not None and latest.total_assets is not None and latest.total_assets > 0:
-        cash_to_assets_ratio = latest.cash_and_cash_equivalents / latest.total_assets
-        if cash_to_assets_ratio > 0.15:
+    # Check debt to equity ratio
+    if latest_metrics and hasattr(latest_metrics, "debt_to_equity") and latest_metrics.debt_to_equity is not None:
+        if latest_metrics.debt_to_equity < 0.5:
             score += 1
-            reasoning.append(f"Strong cash position ({cash_to_assets_ratio:.1%} of assets)")
-        elif cash_to_assets_ratio > 0.08:
+            reasoning.append(f"Low debt-to-equity ratio ({latest_metrics.debt_to_equity:.2f}) indicates strong balance sheet")
+        elif latest_metrics.debt_to_equity < 1.0:
             score += 0.5
-            reasoning.append(f"Adequate cash position ({cash_to_assets_ratio:.1%} of assets)")
+            reasoning.append(f"Moderate debt-to-equity ratio ({latest_metrics.debt_to_equity:.2f}) indicates acceptable balance sheet")
         else:
-            reasoning.append(f"Limited cash reserves ({cash_to_assets_ratio:.1%} of assets)")
+            reasoning.append(f"High debt-to-equity ratio ({latest_metrics.debt_to_equity:.2f}) indicates potential financial risk")
     else:
-        reasoning.append("Cash position data not available")
+        reasoning.append("Debt-to-equity data not available")
     
-    # Check for balance sheet growth
-    if len(financial_line_items) >= 3 and all(hasattr(item, "total_assets") for item in financial_line_items[:3]):
-        assets_values = [item.total_assets for item in financial_line_items[:3] if item.total_assets is not None]
-        if len(assets_values) >= 2 and assets_values[0] > 0 and assets_values[-1] > 0:
-            assets_growth = (assets_values[0] - assets_values[-1]) / assets_values[-1]
-            if assets_growth > 0.1:
-                score += 1
-                reasoning.append(f"Strong balance sheet growth of {assets_growth:.1%} over recent periods")
-            elif assets_growth > 0:
-                score += 0.5
-                reasoning.append(f"Modest balance sheet growth of {assets_growth:.1%}")
-            else:
-                reasoning.append(f"Declining balance sheet with {assets_growth:.1%} change")
-        else:
-            reasoning.append("Insufficient data for balance sheet growth analysis")
-    else:
-        reasoning.append("Insufficient data for balance sheet growth analysis")
-    
-    # Check asset-to-liability ratio
-    if hasattr(latest, "total_assets") and hasattr(latest, "total_liabilities") and latest.total_assets is not None and latest.total_liabilities is not None and latest.total_liabilities > 0:
-        asset_to_liability_ratio = latest.total_assets / latest.total_liabilities
-        if asset_to_liability_ratio > 2:
+    # Check interest coverage ratio
+    if latest_financials and hasattr(latest_financials, "ebitda") and latest_financials.ebitda is not None and hasattr(latest_financials, "interest_expense") and latest_financials.interest_expense is not None and latest_financials.interest_expense != 0:
+        interest_coverage = latest_financials.ebitda / latest_financials.interest_expense
+        if interest_coverage > 5:
             score += 1
-            reasoning.append(f"Strong asset-to-liability ratio of {asset_to_liability_ratio:.2f}")
-        elif asset_to_liability_ratio > 1.5:
+            reasoning.append(f"Strong interest coverage ratio ({interest_coverage:.2f}) indicates ability to service debt")
+        elif interest_coverage > 2:
             score += 0.5
-            reasoning.append(f"Adequate asset-to-liability ratio of {asset_to_liability_ratio:.2f}")
+            reasoning.append(f"Adequate interest coverage ratio ({interest_coverage:.2f}) indicates reasonable ability to service debt")
         else:
-            reasoning.append(f"Concerning asset-to-liability ratio of {asset_to_liability_ratio:.2f}")
+            reasoning.append(f"Low interest coverage ratio ({interest_coverage:.2f}) indicates potential debt servicing issues")
     else:
-        reasoning.append("Asset-to-liability ratio data not available")
+        reasoning.append("Interest coverage data not available")
+    
+    # Check current ratio
+    if latest_metrics and hasattr(latest_metrics, "current_ratio") and latest_metrics.current_ratio is not None:
+        if latest_metrics.current_ratio > 1.5:
+            score += 1
+            reasoning.append(f"Strong current ratio ({latest_metrics.current_ratio:.2f}) indicates good short-term liquidity")
+        elif latest_metrics.current_ratio > 1.0:
+            score += 0.5
+            reasoning.append(f"Adequate current ratio ({latest_metrics.current_ratio:.2f}) indicates acceptable short-term liquidity")
+        else:
+            reasoning.append(f"Low current ratio ({latest_metrics.current_ratio:.2f}) indicates potential short-term liquidity issues")
+    else:
+        reasoning.append("Current ratio data not available")
     
     return {
         "score": score,
-        "max_score": 3,
+        "max_score": max_score,
         "details": "; ".join(reasoning),
     }
 
-def analyze_cash_flow_stability(financial_line_items: list) -> dict:
-    """Analyzes cash flow stability based on financial line items."""
+
+def analyze_cash_flow_stability(latest_financials: Any) -> Dict[str, Any]:
+    """Analyze the stability of the company's cash flows."""
     score = 0
+    max_score = 2
     reasoning = []
     
-    if not financial_line_items:
-        return {
-            "score": 0,
-            "max_score": 3,
-            "details": "No financial data available for cash flow analysis",
-        }
-    
-    latest = financial_line_items[0]
+    # Check free cash flow to revenue ratio
+    if latest_financials and hasattr(latest_financials, "free_cashflow") and latest_financials.free_cashflow is not None and hasattr(latest_financials, "revenue") and latest_financials.revenue is not None and latest_financials.revenue > 0:
+        fcf_to_revenue = latest_financials.free_cashflow / latest_financials.revenue
+        if fcf_to_revenue > 0.15:
+            score += 1
+            reasoning.append(f"Strong free cash flow to revenue ratio ({fcf_to_revenue:.1%}) indicates excellent cash generation")
+        elif fcf_to_revenue > 0.08:
+            score += 0.5
+            reasoning.append(f"Good free cash flow to revenue ratio ({fcf_to_revenue:.1%}) indicates solid cash generation")
+        else:
+            reasoning.append(f"Low free cash flow to revenue ratio ({fcf_to_revenue:.1%}) indicates potential cash flow concerns")
+    else:
+        reasoning.append("Free cash flow to revenue data not available")
     
     # Check operating cash flow to net income ratio
-    if hasattr(latest, "operating_cash_flow") and hasattr(latest, "net_income") and latest.operating_cash_flow is not None and latest.net_income is not None and latest.net_income != 0:
-        ocf_to_ni_ratio = latest.operating_cash_flow / latest.net_income if latest.net_income != 0 else 0
-        if ocf_to_ni_ratio > 1.2:
+    if latest_financials and hasattr(latest_financials, "operating_cashflow") and latest_financials.operating_cashflow is not None and hasattr(latest_financials, "net_income") and latest_financials.net_income is not None and latest_financials.net_income > 0:
+        ocf_to_ni = latest_financials.operating_cashflow / latest_financials.net_income
+        if ocf_to_ni > 1.2:
             score += 1
-            reasoning.append(f"Strong cash flow to earnings quality with ratio of {ocf_to_ni_ratio:.2f}")
-        elif ocf_to_ni_ratio > 0.8:
+            reasoning.append(f"Strong operating cash flow to net income ratio ({ocf_to_ni:.2f}) indicates high earnings quality")
+        elif ocf_to_ni > 0.9:
             score += 0.5
-            reasoning.append(f"Adequate cash flow to earnings quality with ratio of {ocf_to_ni_ratio:.2f}")
-        elif ocf_to_ni_ratio > 0:
-            reasoning.append(f"Poor cash flow to earnings quality with ratio of {ocf_to_ni_ratio:.2f}")
+            reasoning.append(f"Adequate operating cash flow to net income ratio ({ocf_to_ni:.2f}) indicates reasonable earnings quality")
         else:
-            reasoning.append("Negative cash flow to earnings ratio")
+            reasoning.append(f"Low operating cash flow to net income ratio ({ocf_to_ni:.2f}) indicates potential earnings quality issues")
     else:
-        reasoning.append("Cash flow to earnings ratio data not available")
-    
-    # Check cash flow consistency
-    if len(financial_line_items) >= 3:
-        ocf_values = [item.operating_cash_flow for item in financial_line_items[:3] if hasattr(item, "operating_cash_flow") and item.operating_cash_flow is not None]
-        if len(ocf_values) >= 3:
-            if all(ocf > 0 for ocf in ocf_values):
-                score += 1
-                reasoning.append("Consistently positive operating cash flow")
-            elif sum(1 for ocf in ocf_values if ocf > 0) >= 2:
-                score += 0.5
-                reasoning.append("Mostly positive operating cash flow")
-            else:
-                reasoning.append("Inconsistent or negative operating cash flow")
-        else:
-            reasoning.append("Insufficient data for cash flow consistency analysis")
-    else:
-        reasoning.append("Insufficient data for cash flow consistency analysis")
-    
-    # Check cash flow growth
-    if len(financial_line_items) >= 2:
-        ocf_values = [item.operating_cash_flow for item in financial_line_items[:2] if hasattr(item, "operating_cash_flow") and item.operating_cash_flow is not None]
-        if len(ocf_values) >= 2 and ocf_values[1] != 0:
-            ocf_growth = (ocf_values[0] - ocf_values[1]) / abs(ocf_values[1])
-            if ocf_growth > 0.1:
-                score += 1
-                reasoning.append(f"Strong cash flow growth of {ocf_growth:.1%}")
-            elif ocf_growth > 0:
-                score += 0.5
-                reasoning.append(f"Modest cash flow growth of {ocf_growth:.1%}")
-            else:
-                reasoning.append(f"Declining cash flow with {ocf_growth:.1%} change")
-        else:
-            reasoning.append("Cash flow growth data not available")
-    else:
-        reasoning.append("Cash flow growth data not available")
+        reasoning.append("Operating cash flow to net income data not available")
     
     return {
         "score": score,
-        "max_score": 3,
+        "max_score": max_score,
         "details": "; ".join(reasoning),
     }
 
-def analyze_debt_levels(financial_line_items: list) -> dict:
-    """Analyzes debt levels based on financial line items."""
-    score = 0
-    reasoning = []
-    
-    if not financial_line_items:
-        return {
-            "score": 0,
-            "max_score": 2,
-            "details": "No financial data available for debt analysis",
-        }
-    
-    latest = financial_line_items[0]
-    
-    # Check debt to asset ratio
-    if hasattr(latest, "total_debt") and hasattr(latest, "total_assets") and latest.total_debt is not None and latest.total_assets is not None and latest.total_assets > 0:
-        debt_to_asset_ratio = latest.total_debt / latest.total_assets
-        if debt_to_asset_ratio < 0.2:
-            score += 1
-            reasoning.append(f"Low debt to asset ratio of {debt_to_asset_ratio:.1%}")
-        elif debt_to_asset_ratio < 0.4:
-            score += 0.5
-            reasoning.append(f"Moderate debt to asset ratio of {debt_to_asset_ratio:.1%}")
-        else:
-            reasoning.append(f"High debt to asset ratio of {debt_to_asset_ratio:.1%}")
-    else:
-        reasoning.append("Debt to asset ratio data not available")
-    
-    # Check debt serviceability
-    if hasattr(latest, "total_debt") and hasattr(latest, "operating_cash_flow") and latest.total_debt is not None and latest.operating_cash_flow is not None and latest.operating_cash_flow > 0:
-        years_to_repay = latest.total_debt / latest.operating_cash_flow
-        if years_to_repay < 3:
-            score += 1
-            reasoning.append(f"Strong debt serviceability ({years_to_repay:.1f} years to repay)")
-        elif years_to_repay < 5:
-            score += 0.5
-            reasoning.append(f"Adequate debt serviceability ({years_to_repay:.1f} years to repay)")
-        else:
-            reasoning.append(f"Poor debt serviceability ({years_to_repay:.1f} years to repay)")
-    else:
-        reasoning.append("Debt serviceability data not available")
-    
-    return {
-        "score": score,
-        "max_score": 2,
-        "details": "; ".join(reasoning),
-    }
 
-def analyze_environment_fit(environment_analysis: dict, metrics: list, financial_line_items: list) -> dict:
-    """Analyzes how well the stock fits the current economic environment."""
+def analyze_environment_fit(environment_type: str, latest_metrics: Any, latest_financials: Any) -> Dict[str, Any]:
+    """Analyze how well the company fits the current economic environment."""
     score = 0
+    max_score = 1
     reasoning = []
     
-    if not environment_analysis or not metrics or not financial_line_items:
-        return {
-            "score": 0,
-            "max_score": 4,
-            "details": "Insufficient data for environment fit analysis",
-        }
-    
-    environment_type = environment_analysis.get("environment_type", "stable growth, stable inflation")
-    growth_trend = environment_analysis.get("growth_trend", "stable")
-    inflation_trend = environment_analysis.get("inflation_trend", "stable")
-    indicators = environment_analysis.get("indicators", {})
-    gdp_growth = indicators.get("gdp_growth", 0)
-    
-    latest_metrics = metrics[0] if metrics else None
-    latest_financials = financial_line_items[0] if financial_line_items else None
-    
-    # Check profit margins for inflation resilience
-    if latest_metrics and hasattr(latest_metrics, "gross_margin") and latest_metrics.gross_margin is not None:
-        if inflation_trend == "rising" and latest_metrics.gross_margin > 0.4:
-            score += 1
-            reasoning.append(f"Strong gross margins ({latest_metrics.gross_margin:.1%}) provide inflation protection")
-        elif inflation_trend == "rising" and latest_metrics.gross_margin > 0.25:
-            score += 0.5
-            reasoning.append(f"Moderate gross margins ({latest_metrics.gross_margin:.1%}) provide some inflation protection")
-        elif inflation_trend == "falling" and latest_metrics.gross_margin < 0.25:
-            score += 0.5
-            reasoning.append(f"Lower margins ({latest_metrics.gross_margin:.1%}) may benefit in deflationary environment")
-    else:
-        reasoning.append("Margin data not available for inflation analysis")
-    
-    # Check debt structure for interest rate environment
-    if latest_financials and hasattr(latest_financials, "total_debt") and latest_financials.total_debt is not None:
-        interest_rate = environment_analysis["indicators"].get("interest_rate", 0)
-        
-        if interest_rate > 3 and (not latest_financials.total_debt or latest_financials.total_debt == 0):
-            score += 1
-            reasoning.append("Low/no debt position is advantageous in high interest rate environment")
-        elif interest_rate < 2 and latest_financials.total_debt > 0:
-            score += 0.5
-            reasoning.append("Debt utilization may be beneficial in low interest rate environment")
-    else:
-        reasoning.append("Debt structure data not available for interest rate analysis")
-    
-    # Check revenue growth relative to economic growth
-    if len(financial_line_items) >= 2:
-        revenue_values = []
-        for item in financial_line_items[:2]:
-            if hasattr(item, "revenue") and item.revenue is not None:
-                revenue_values.append(item.revenue)
-        
-        if len(revenue_values) >= 2 and revenue_values[1] > 0:
-            revenue_growth = (revenue_values[0] - revenue_values[1]) / revenue_values[1]
-            
-            if growth_trend == "rising" and revenue_growth > gdp_growth:
-                score += 1
-                reasoning.append(f"Revenue growth ({revenue_growth:.1%}) outpaces economic growth in rising economy")
-            elif growth_trend == "falling" and revenue_growth > 0:
-                score += 1
-                reasoning.append(f"Positive revenue growth ({revenue_growth:.1%}) despite slowing economy")
-            elif growth_trend == "stable" and revenue_growth > gdp_growth:
-                score += 0.5
-                reasoning.append(f"Revenue growth ({revenue_growth:.1%}) exceeds economic growth")
-        else:
-            reasoning.append("Revenue growth data not available")
-    else:
-        reasoning.append("Revenue growth data not available")
-    
-    # Check specific environment type fit
     if environment_type == "rising growth, rising inflation":
-        if latest_metrics and hasattr(latest_metrics, "beta") and latest_metrics.beta is not None:
-            if latest_metrics.beta > 1:
+        if latest_metrics and hasattr(latest_metrics, "return_on_equity") and latest_metrics.return_on_equity is not None:
+            if latest_metrics.return_on_equity > 0.15:
                 score += 1
-                reasoning.append(f"Higher beta ({latest_metrics.beta:.2f}) beneficial in growth environment")
+                reasoning.append(f"High ROE ({latest_metrics.return_on_equity:.1%}) beneficial in growth environment")
             else:
-                reasoning.append(f"Lower beta ({latest_metrics.beta:.2f}) may limit upside in growth environment")
+                reasoning.append(f"Lower ROE ({latest_metrics.return_on_equity:.1%}) less optimal in growth environment")
         else:
-            reasoning.append("Beta data not available for environment fit analysis")
+            reasoning.append("ROE data not available for environment fit analysis")
     
     elif environment_type == "rising growth, falling inflation":
-        if latest_metrics and hasattr(latest_metrics, "pe_ratio") and latest_metrics.pe_ratio is not None:
-            if latest_metrics.pe_ratio > 0 and latest_metrics.pe_ratio < 20:
+        if latest_metrics and hasattr(latest_metrics, "price_to_earnings") and latest_metrics.price_to_earnings is not None:
+            if latest_metrics.price_to_earnings < 20:
                 score += 1
-                reasoning.append(f"Reasonable valuation ({latest_metrics.pe_ratio:.1f} P/E) in growth environment")
-            elif latest_metrics.pe_ratio >= 20:
-                reasoning.append(f"Higher valuation ({latest_metrics.pe_ratio:.1f} P/E) may limit upside")
+                reasoning.append(f"Reasonable P/E ({latest_metrics.price_to_earnings:.1f}) attractive in growth with low inflation")
             else:
-                reasoning.append("Negative P/E ratio indicates earnings challenges")
+                reasoning.append(f"Higher P/E ({latest_metrics.price_to_earnings:.1f}) less attractive even in favorable environment")
         else:
             reasoning.append("P/E data not available for environment fit analysis")
     
@@ -498,8 +237,8 @@ def analyze_environment_fit(environment_analysis: dict, metrics: list, financial
             reasoning.append("Dividend yield data not available for environment fit analysis")
     
     elif environment_type == "falling growth, rising inflation":
-        if latest_financials and hasattr(latest_financials, "cash_and_cash_equivalents") and latest_financials.cash_and_cash_equivalents is not None and hasattr(latest_financials, "total_assets") and latest_financials.total_assets is not None and latest_financials.total_assets > 0:
-            cash_ratio = latest_financials.cash_and_cash_equivalents / latest_financials.total_assets
+        if latest_financials and hasattr(latest_financials, "cash_and_equivalents") and latest_financials.cash_and_equivalents is not None and hasattr(latest_financials, "total_assets") and latest_financials.total_assets is not None and latest_financials.total_assets > 0:
+            cash_ratio = latest_financials.cash_and_equivalents / latest_financials.total_assets
             if cash_ratio > 0.2:
                 score += 1
                 reasoning.append(f"Strong cash position ({cash_ratio:.1%} of assets) provides stagflation protection")
@@ -510,9 +249,10 @@ def analyze_environment_fit(environment_analysis: dict, metrics: list, financial
     
     return {
         "score": score,
-        "max_score": 4,
+        "max_score": 1,
         "details": "; ".join(reasoning),
     }
+
 
 def generate_dalio_output(
     ticker: str,
