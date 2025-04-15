@@ -21,11 +21,11 @@ class RayDalioSignal(BaseModel):
 def ray_dalio_agent(state):
     """Ray Dalio agent implementation."""
     data = state["data"]
-    tickers = data["tickers"]  # Changed from ticker to tickers
+    tickers = data.get("tickers", data.get("ticker", "AAPL"))  # Get tickers with fallback to ticker or default
     current_ticker = tickers[0] if isinstance(tickers, list) else tickers.split(',')[0]  # Handle both list and comma-separated string
-    end_date = data["end_date"]
-    model_name = data["model_name"]
-    model_provider = data["model_provider"]
+    end_date = data.get("end_date", "2025-04-15")  # Default to current date if not provided
+    model_name = data.get("model_name", "gpt-4")  # Default to gpt-4 if not provided
+    model_provider = data.get("model_provider", "openai")  # Default to openai if not provided
     
     progress.update_status("ray_dalio_agent", current_ticker, "Fetching financial metrics")
     # Fetch required data
