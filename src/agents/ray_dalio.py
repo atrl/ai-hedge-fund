@@ -1,90 +1,97 @@
 """Ray Dalio agent implementation."""
 import json
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, List
 
 from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel
+from typing_extensions import Literal
 
 from tools.api import get_financial_metrics, get_market_cap, search_line_items, get_economic_indicators
 from utils.llm import call_llm
-from utils.progress import AgentProgress as Progress
-from utils.models import RayDalioSignal
+from utils.progress import progress
 
 
-def ray_dalio_agent(
-    tickers: List[str],
-    end_date: str,
-    model_name: str,
-    model_provider: str,
-    progress: Progress,
-) -> Dict[str, Any]:
+class RayDalioSignal(BaseModel):
+    """Ray Dalio investment signal model."""
+    signal: Literal["bullish", "bearish", "neutral"]
+    confidence: float
+    reasoning: str
+
+
+def ray_dalio_agent(state):
     """Ray Dalio agent implementation."""
-    results = {}
+    data = state["data"]
+    ticker = data["ticker"]
+    end_date = data["end_date"]
+    model_name = data["model_name"]
+    model_provider = data["model_provider"]
     
-    for ticker in tickers:
-        progress.update_status("ray_dalio_agent", ticker, "Fetching financial metrics")
-        # Fetch required data
-        metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5)
-        
-        progress.update_status("ray_dalio_agent", ticker, "Gathering financial line items")
-        financial_line_items = search_line_items(
-            ticker,
-            [
-                "net_income",
-                "total_assets",
-                "total_liabilities",
-                "total_debt",
-                "cash_and_equivalents",  # Changed from cash_and_cash_equivalents
-                "operating_cashflow",    # Changed from operating_cash_flow
-                "free_cashflow",
-                "revenue",
-                "ebitda",
-                "interest_expense",
-            ],
-            end_date,
-            period="ttm",
-            limit=5,
-        )
-        
-        progress.update_status("ray_dalio_agent", ticker, "Analyzing economic environment")
-        economic_indicators = get_economic_indicators(end_date)
-        
-        # Determine current economic environment
-        environment_type = determine_economic_environment(economic_indicators)
-        
-        # Analyze company fundamentals
-        progress.update_status("ray_dalio_agent", ticker, "Analyzing fundamentals")
-        latest_metrics = metrics[0] if metrics else None
-        latest_financials = financial_line_items[0] if financial_line_items else None
-        
-        # Prepare analysis data
-        analysis_data = {
-            "economic_environment": {
-                "type": environment_type,
-                "indicators": economic_indicators.get("indicators", {}) if economic_indicators else {},
-            },
-            "fundamentals": {
-                "debt_to_equity": getattr(latest_metrics, "debt_to_equity", None),
-                "current_ratio": getattr(latest_metrics, "current_ratio", None),
-                "return_on_equity": getattr(latest_metrics, "return_on_equity", None),
-                "price_to_earnings": getattr(latest_metrics, "price_to_earnings", None),
-                "dividend_yield": getattr(latest_metrics, "dividend_yield", None),
-                "market_cap": get_market_cap(ticker, end_date),
-            },
-            "financial_health": analyze_financial_health(latest_metrics, latest_financials),
-            "cash_flow_stability": analyze_cash_flow_stability(latest_financials),
-            "environment_fit": analyze_environment_fit(environment_type, latest_metrics, latest_financials),
-        }
-        
-        # Generate output
-        progress.update_status("ray_dalio_agent", ticker, "Generating investment signal")
-        signal = generate_dalio_output(ticker, analysis_data, model_name, model_provider)
-        
-        results[ticker] = signal.model_dump()
+    progress.update_status("ray_dalio_agent", ticker, "Fetching financial metrics")
+    # Fetch required data
+    metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5)
     
-    return results
+    progress.update_status("ray_dalio_agent", ticker, "Gathering financial line items")
+    financial_line_items = search_line_items(
+        ticker,
+        [
+            "net_income",
+            "total_assets",
+            "total_liabilities",
+            "total_debt",
+            "cash_and_equivalents",  # Changed from cash_and_cash_equivalents
+            "operating_cashflow",    # Changed from operating_cash_flow
+            "free_cashflow",
+            "revenue",
+            "ebitda",
+            "interest_expense",
+        ],
+        end_date,
+        period="ttm",
+        limit=5,
+    )
+    
+    progress.update_status("ray_dalio_agent", ticker, "Analyzing economic environment")
+    economic_indicators = get_economic_indicators(end_date)
+    
+    # Determine current economic environment
+    environment_type = determine_economic_environment(economic_indicators)
+    
+    # Analyze company fundamentals
+    progress.update_status("ray_dalio_agent", ticker, "Analyzing fundamentals")
+    latest_metrics = metrics[0] if metrics else None
+    latest_financials = financial_line_items[0] if financial_line_items else None
+    
+    # Prepare analysis data
+    analysis_data = {
+        "economic_environment": {
+            "type": environment_type,
+            "indicators": economic_indicators.get("indicators", {}) if economic_indicators else {},
+        },
+        "fundamentals": {
+            "debt_to_equity": getattr(latest_metrics, "debt_to_equity", None),
+            "current_ratio": getattr(latest_metrics, "current_ratio", None),
+            "return_on_equity": getattr(latest_metrics, "return_on_equity", None),
+            "price_to_earnings": getattr(latest_metrics, "price_to_earnings", None),
+            "dividend_yield": getattr(latest_metrics, "dividend_yield", None),
+            "market_cap": get_market_cap(ticker, end_date),
+        },
+        "financial_health": analyze_financial_health(latest_metrics, latest_financials),
+        "cash_flow_stability": analyze_cash_flow_stability(latest_financials),
+        "environment_fit": analyze_environment_fit(environment_type, latest_metrics, latest_financials),
+    }
+    
+    # Generate output
+    progress.update_status("ray_dalio_agent", ticker, "Generating investment signal")
+    signal = generate_dalio_output(ticker, analysis_data, model_name, model_provider)
+    
+    # Store reasoning in state if show_agent_reasoning is available
+    if "show_agent_reasoning" in globals():
+        show_agent_reasoning(state, signal.reasoning)
+    
+    return signal.model_dump()
 
 
-def determine_economic_environment(economic_indicators: Optional[Dict[str, Any]]) -> str:
+def determine_economic_environment(economic_indicators):
     """Determine the current economic environment based on indicators."""
     if not economic_indicators or "indicators" not in economic_indicators:
         return "unknown"
@@ -106,7 +113,7 @@ def determine_economic_environment(economic_indicators: Optional[Dict[str, Any]]
             return "falling growth, falling inflation"
 
 
-def analyze_financial_health(latest_metrics: Any, latest_financials: Any) -> Dict[str, Any]:
+def analyze_financial_health(latest_metrics, latest_financials):
     """Analyze the financial health of the company."""
     score = 0
     max_score = 3
@@ -159,7 +166,7 @@ def analyze_financial_health(latest_metrics: Any, latest_financials: Any) -> Dic
     }
 
 
-def analyze_cash_flow_stability(latest_financials: Any) -> Dict[str, Any]:
+def analyze_cash_flow_stability(latest_financials):
     """Analyze the stability of the company's cash flows."""
     score = 0
     max_score = 2
@@ -200,7 +207,7 @@ def analyze_cash_flow_stability(latest_financials: Any) -> Dict[str, Any]:
     }
 
 
-def analyze_environment_fit(environment_type: str, latest_metrics: Any, latest_financials: Any) -> Dict[str, Any]:
+def analyze_environment_fit(environment_type, latest_metrics, latest_financials):
     """Analyze how well the company fits the current economic environment."""
     score = 0
     max_score = 1
@@ -255,11 +262,11 @@ def analyze_environment_fit(environment_type: str, latest_metrics: Any, latest_f
 
 
 def generate_dalio_output(
-    ticker: str,
-    analysis_data: dict,
-    model_name: str,
-    model_provider: str,
-) -> RayDalioSignal:
+    ticker,
+    analysis_data,
+    model_name,
+    model_provider,
+):
     """Get investment decision from LLM with Ray Dalio's principles"""
     template = ChatPromptTemplate.from_messages(
         [
