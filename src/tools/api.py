@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import requests
+import datetime
 
 from data.cache import get_cache
 from data.models import (
@@ -249,6 +250,97 @@ def get_company_news(
     _cache.set_company_news(ticker, [news.model_dump() for news in all_news])
     return all_news
 
+
+def get_economic_indicators(end_date: str) -> dict:
+    """Fetch economic indicators for a given date.
+    
+    This function retrieves key economic indicators such as GDP growth,
+    inflation rate, interest rate, and unemployment rate for analysis.
+    
+    Args:
+        end_date: The date for which to fetch economic indicators (YYYY-MM-DD)
+        
+    Returns:
+        A dictionary containing economic indicators and their values
+    """
+    # In a real implementation, this would fetch from an API
+    # For now, we'll simulate data based on the date
+    
+    # Check cache first (implementation would depend on your caching system)
+    cache_key = f"economic_indicators_{end_date}"
+    if cached_data := _cache.get(cache_key):
+        return cached_data
+    
+    # Parse the end_date
+    try:
+        date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        # Default to current date if format is invalid
+        date_obj = datetime.datetime.now()
+    
+    # Simulate different economic environments based on the year and month
+    # This is just for demonstration - in a real system, you'd fetch actual data
+    year = date_obj.year
+    month = date_obj.month
+    
+    # Base values
+    gdp_growth = 2.5  # Default moderate growth
+    inflation_rate = 2.0  # Default target inflation
+    interest_rate = 3.0  # Default moderate interest rate
+    unemployment_rate = 4.5  # Default moderate unemployment
+    
+    # Adjust based on year (simulating economic cycles)
+    year_mod = year % 10  # Create a 10-year cycle
+    if year_mod < 3:  # Early cycle - growth phase
+        gdp_growth += 1.5
+        inflation_rate -= 0.5
+        interest_rate -= 1.0
+        unemployment_rate -= 1.0
+    elif year_mod < 6:  # Mid cycle - stable growth
+        gdp_growth += 0.5
+        inflation_rate += 0.5
+        interest_rate += 0.5
+    elif year_mod < 8:  # Late cycle - slowing growth, rising inflation
+        gdp_growth -= 0.5
+        inflation_rate += 1.5
+        interest_rate += 1.5
+        unemployment_rate -= 0.5
+    else:  # Recession/recovery phase
+        gdp_growth -= 1.5
+        inflation_rate -= 1.0
+        interest_rate -= 0.5
+        unemployment_rate += 2.0
+    
+    # Adjust based on month (simulating seasonal effects)
+    if month in [1, 2, 12]:  # Winter months
+        gdp_growth -= 0.3
+    elif month in [4, 5, 6]:  # Spring months
+        gdp_growth += 0.4
+        unemployment_rate -= 0.2
+    elif month in [7, 8, 9]:  # Summer months
+        inflation_rate += 0.2
+    
+    # Ensure values are in reasonable ranges
+    gdp_growth = max(-2.0, min(gdp_growth, 5.0))
+    inflation_rate = max(0.0, min(inflation_rate, 8.0))
+    interest_rate = max(0.25, min(interest_rate, 8.0))
+    unemployment_rate = max(2.5, min(unemployment_rate, 10.0))
+    
+    # Create the result dictionary
+    result = {
+        "date": end_date,
+        "indicators": {
+            "gdp_growth": round(gdp_growth, 1),
+            "inflation_rate": round(inflation_rate, 1),
+            "interest_rate": round(interest_rate, 1),
+            "unemployment_rate": round(unemployment_rate, 1),
+        }
+    }
+    
+    # Cache the result (implementation would depend on your caching system)
+    # _cache.set(cache_key, result)
+    
+    return result
 
 
 def get_market_cap(
