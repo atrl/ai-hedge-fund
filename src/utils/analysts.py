@@ -1,5 +1,4 @@
 """Constants and utilities related to analysts configuration."""
-
 from agents.ben_graham import ben_graham_agent
 from agents.bill_ackman import bill_ackman_agent
 from agents.cathie_wood import cathie_wood_agent
@@ -52,40 +51,35 @@ ANALYST_CONFIG = {
         "agent_func": phil_fisher_agent,
         "order": 6,
     },
-    "ray_dalio": {
-        "display_name": "Ray Dalio",
-        "agent_func": ray_dalio_agent,
-        "order": 7,
-    },
     "stanley_druckenmiller": {
         "display_name": "Stanley Druckenmiller",
         "agent_func": stanley_druckenmiller_agent,
-        "order": 8,
+        "order": 7,
     },
     "warren_buffett": {
         "display_name": "Warren Buffett",
         "agent_func": warren_buffett_agent,
-        "order": 9,
+        "order": 8,
     },
     "technical_analyst": {
         "display_name": "Technical Analyst",
         "agent_func": technical_analyst_agent,
-        "order": 10,
+        "order": 9,
     },
     "fundamentals_analyst": {
         "display_name": "Fundamentals Analyst",
         "agent_func": fundamentals_agent,
-        "order": 11,
+        "order": 10,
     },
     "sentiment_analyst": {
         "display_name": "Sentiment Analyst",
         "agent_func": sentiment_agent,
-        "order": 12,
+        "order": 11,
     },
     "valuation_analyst": {
         "display_name": "Valuation Analyst",
         "agent_func": valuation_agent,
-        "order": 13,
+        "order": 12,
     },
     "ray_dalio": {
         "display_name": "Ray Dalio",
@@ -96,7 +90,6 @@ ANALYST_CONFIG = {
 
 # Derive ANALYST_ORDER from ANALYST_CONFIG for backwards compatibility
 ANALYST_ORDER = [(config["display_name"], key) for key, config in sorted(ANALYST_CONFIG.items(), key=lambda x: x[1]["order"])]
-
 
 def get_analyst_nodes():
     """Get the mapping of analyst keys to their (node_name, agent_func) tuples."""
