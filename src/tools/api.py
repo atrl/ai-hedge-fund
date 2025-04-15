@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import requests
 import datetime
+import time
 
 from data.cache import get_cache
 from data.models import (
@@ -252,10 +253,11 @@ def get_company_news(
 
 
 def get_economic_indicators(end_date: str) -> dict:
-    """Fetch economic indicators for a given date.
+    """Fetch economic indicators from FRED API.
     
     This function retrieves key economic indicators such as GDP growth,
-    inflation rate, interest rate, and unemployment rate for analysis.
+    inflation rate, interest rate, and unemployment rate from the Federal
+    Reserve Economic Data (FRED) API.
     
     Args:
         end_date: The date for which to fetch economic indicators (YYYY-MM-DD)
@@ -263,14 +265,138 @@ def get_economic_indicators(end_date: str) -> dict:
     Returns:
         A dictionary containing economic indicators and their values
     """
-    # In a real implementation, this would fetch from an API
-    # For now, we'll simulate data based on the date
-    
-    # Check cache first (implementation would depend on your caching system)
+    # Check cache first
     cache_key = f"economic_indicators_{end_date}"
     if cached_data := _cache.get(cache_key):
         return cached_data
     
+    # FRED API key - in a real implementation, this would be stored in environment variables
+    # For demonstration purposes, we'll use a placeholder
+    api_key = os.environ.get("FRED_API_KEY", "YOUR_FRED_API_KEY")
+    
+    # Series IDs for the economic indicators we want to fetch
+    series_ids = {
+        "gdp_growth": "GDP",          # Gross Domestic Product
+        "inflation_rate": "CPIAUCSL",  # Consumer Price Index for All Urban Consumers
+        "interest_rate": "FEDFUNDS",   # Federal Funds Effective Rate
+        "unemployment_rate": "UNRATE"  # Unemployment Rate
+    }
+    
+    # Parse the end_date
+    try:
+        date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d")
+        # Convert to FRED API format (YYYY-MM-DD)
+        observation_end = date_obj.strftime("%Y-%m-%d")
+        
+        # For GDP growth calculation, we need data from a year ago
+        year_ago = date_obj - datetime.timedelta(days=365)
+        observation_start = year_ago.strftime("%Y-%m-%d")
+    except ValueError:
+        # Default to current date if format is invalid
+        current_date = datetime.datetime.now()
+        observation_end = current_date.strftime("%Y-%m-%d")
+        year_ago = current_date - datetime.timedelta(days=365)
+        observation_start = year_ago.strftime("%Y-%m-%d")
+    
+    # Initialize results dictionary
+    result = {
+        "date": end_date,
+        "indicators": {}
+    }
+    
+    # If no API key is available, return simulated data
+    if api_key == "YOUR_FRED_API_KEY":
+        print("Warning: No FRED API key provided. Using simulated economic indicators.")
+        return _get_simulated_economic_indicators(end_date)
+    
+    # Fetch data for each indicator
+    for indicator_name, series_id in series_ids.items():
+        try:
+            # Base URL for FRED API
+            base_url = "https://api.stlouisfed.org/fred/series/observations"
+            
+            # Parameters for the API request
+            params = {
+                "series_id": series_id,
+                "api_key": api_key,
+                "file_type": "json",
+                "sort_order": "desc",  # Get most recent first
+                "limit": 12,  # Get enough data for year-over-year calculations
+                "observation_end": observation_end
+            }
+            
+            # For GDP growth, we need more historical data
+            if indicator_name == "gdp_growth":
+                params["observation_start"] = observation_start
+            
+            # Make the API request
+            response = requests.get(base_url, params=params)
+            
+            # Check if the request was successful
+            if response.status_code == 200:
+                data = response.json()
+                observations = data.get("observations", [])
+                
+                if observations:
+                    # Process the data based on the indicator
+                    if indicator_name == "gdp_growth":
+                        # Calculate year-over-year GDP growth
+                        if len(observations) >= 2:
+                            latest_gdp = float(observations[0]["value"])
+                            year_ago_gdp = float(observations[-1]["value"])
+                            gdp_growth = ((latest_gdp - year_ago_gdp) / year_ago_gdp) * 100
+                            result["indicators"][indicator_name] = round(gdp_growth, 1)
+                    elif indicator_name == "inflation_rate":
+                        # Calculate year-over-year inflation rate
+                        if len(observations) >= 12:  # Need at least 12 months of data
+                            latest_cpi = float(observations[0]["value"])
+                            year_ago_cpi = float(observations[11]["value"])
+                            inflation_rate = ((latest_cpi - year_ago_cpi) / year_ago_cpi) * 100
+                            result["indicators"][indicator_name] = round(inflation_rate, 1)
+                    else:
+                        # For other indicators, just use the latest value
+                        result["indicators"][indicator_name] = round(float(observations[0]["value"]), 1)
+            else:
+                print(f"Error fetching {indicator_name} data: {response.status_code}")
+                # If API request fails, use simulated data for this indicator
+                simulated_data = _get_simulated_economic_indicators(end_date)
+                result["indicators"][indicator_name] = simulated_data["indicators"].get(indicator_name)
+                
+            # Add a small delay to avoid hitting API rate limits
+            time.sleep(0.5)
+                
+        except Exception as e:
+            print(f"Error processing {indicator_name} data: {str(e)}")
+            # If processing fails, use simulated data for this indicator
+            simulated_data = _get_simulated_economic_indicators(end_date)
+            result["indicators"][indicator_name] = simulated_data["indicators"].get(indicator_name)
+    
+    # Check if we have all the indicators
+    if len(result["indicators"]) < len(series_ids):
+        # Fill in any missing indicators with simulated data
+        simulated_data = _get_simulated_economic_indicators(end_date)
+        for indicator_name in series_ids.keys():
+            if indicator_name not in result["indicators"]:
+                result["indicators"][indicator_name] = simulated_data["indicators"].get(indicator_name)
+    
+    # Cache the result
+    _cache.set(cache_key, result)
+    
+    return result
+
+
+def _get_simulated_economic_indicators(end_date: str) -> dict:
+    """Generate simulated economic indicators based on the date.
+    
+    This is a fallback function used when the FRED API is not available or fails.
+    It generates realistic but simulated economic indicator values.
+    
+    Args:
+        end_date: The date for which to generate indicators (YYYY-MM-DD)
+        
+    Returns:
+        A dictionary containing simulated economic indicators
+    """
     # Parse the end_date
     try:
         date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d")
@@ -279,7 +405,6 @@ def get_economic_indicators(end_date: str) -> dict:
         date_obj = datetime.datetime.now()
     
     # Simulate different economic environments based on the year and month
-    # This is just for demonstration - in a real system, you'd fetch actual data
     year = date_obj.year
     month = date_obj.month
     
@@ -336,9 +461,6 @@ def get_economic_indicators(end_date: str) -> dict:
             "unemployment_rate": round(unemployment_rate, 1),
         }
     }
-    
-    # Cache the result (implementation would depend on your caching system)
-    # _cache.set(cache_key, result)
     
     return result
 

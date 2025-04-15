@@ -87,6 +87,11 @@ ANALYST_CONFIG = {
         "agent_func": valuation_agent,
         "order": 13,
     },
+    "ray_dalio": {
+        "display_name": "Ray Dalio",
+        "agent_func": ray_dalio_agent,
+        "order": 13,
+    },
 }
 
 # Derive ANALYST_ORDER from ANALYST_CONFIG for backwards compatibility
