@@ -40,8 +40,8 @@ def ray_dalio_agent(state):
             "total_liabilities",
             "total_debt",
             "cash_and_equivalents",  # Changed from cash_and_cash_equivalents
-            "operating_cashflow",    # Changed from operating_cash_flow
-            "free_cashflow",
+            "operating_cash_flow",    # Changed from operating_cashflow to operating_cash_flow
+            "free_cash_flow",         # Changed from free_cashflow to free_cash_flow
             "revenue",
             "ebitda",
             "interest_expense",
@@ -174,8 +174,8 @@ def analyze_cash_flow_stability(latest_financials):
     reasoning = []
     
     # Check free cash flow to revenue ratio
-    if latest_financials and hasattr(latest_financials, "free_cashflow") and latest_financials.free_cashflow is not None and hasattr(latest_financials, "revenue") and latest_financials.revenue is not None and latest_financials.revenue > 0:
-        fcf_to_revenue = latest_financials.free_cashflow / latest_financials.revenue
+    if latest_financials and hasattr(latest_financials, "free_cash_flow") and latest_financials.free_cash_flow is not None and hasattr(latest_financials, "revenue") and latest_financials.revenue is not None and latest_financials.revenue > 0:
+        fcf_to_revenue = latest_financials.free_cash_flow / latest_financials.revenue
         if fcf_to_revenue > 0.15:
             score += 1
             reasoning.append(f"Strong free cash flow to revenue ratio ({fcf_to_revenue:.1%}) indicates excellent cash generation")
@@ -188,8 +188,8 @@ def analyze_cash_flow_stability(latest_financials):
         reasoning.append("Free cash flow to revenue data not available")
     
     # Check operating cash flow to net income ratio
-    if latest_financials and hasattr(latest_financials, "operating_cashflow") and latest_financials.operating_cashflow is not None and hasattr(latest_financials, "net_income") and latest_financials.net_income is not None and latest_financials.net_income > 0:
-        ocf_to_ni = latest_financials.operating_cashflow / latest_financials.net_income
+    if latest_financials and hasattr(latest_financials, "operating_cash_flow") and latest_financials.operating_cash_flow is not None and hasattr(latest_financials, "net_income") and latest_financials.net_income is not None and latest_financials.net_income > 0:
+        ocf_to_ni = latest_financials.operating_cash_flow / latest_financials.net_income
         if ocf_to_ni > 1.2:
             score += 1
             reasoning.append(f"Strong operating cash flow to net income ratio ({ocf_to_ni:.2f}) indicates high earnings quality")
