@@ -6,7 +6,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from tools.api import get_financial_metrics, get_market_cap, search_line_items, get_economic_indicators
 from utils.llm import call_llm
-from utils.progress import Progress
+from utils.progress import AgentProgress as Progress
 from utils.models import RayDalioSignal
 
 
