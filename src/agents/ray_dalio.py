@@ -21,18 +21,19 @@ class RayDalioSignal(BaseModel):
 def ray_dalio_agent(state):
     """Ray Dalio agent implementation."""
     data = state["data"]
-    ticker = data["ticker"]
+    tickers = data["tickers"]  # Changed from ticker to tickers
+    current_ticker = tickers[0] if isinstance(tickers, list) else tickers.split(',')[0]  # Handle both list and comma-separated string
     end_date = data["end_date"]
     model_name = data["model_name"]
     model_provider = data["model_provider"]
     
-    progress.update_status("ray_dalio_agent", ticker, "Fetching financial metrics")
+    progress.update_status("ray_dalio_agent", current_ticker, "Fetching financial metrics")
     # Fetch required data
-    metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5)
+    metrics = get_financial_metrics(current_ticker, end_date, period="ttm", limit=5)
     
-    progress.update_status("ray_dalio_agent", ticker, "Gathering financial line items")
+    progress.update_status("ray_dalio_agent", current_ticker, "Gathering financial line items")
     financial_line_items = search_line_items(
-        ticker,
+        current_ticker,
         [
             "net_income",
             "total_assets",
@@ -50,14 +51,14 @@ def ray_dalio_agent(state):
         limit=5,
     )
     
-    progress.update_status("ray_dalio_agent", ticker, "Analyzing economic environment")
+    progress.update_status("ray_dalio_agent", current_ticker, "Analyzing economic environment")
     economic_indicators = get_economic_indicators(end_date)
     
     # Determine current economic environment
     environment_type = determine_economic_environment(economic_indicators)
     
     # Analyze company fundamentals
-    progress.update_status("ray_dalio_agent", ticker, "Analyzing fundamentals")
+    progress.update_status("ray_dalio_agent", current_ticker, "Analyzing fundamentals")
     latest_metrics = metrics[0] if metrics else None
     latest_financials = financial_line_items[0] if financial_line_items else None
     
@@ -73,7 +74,7 @@ def ray_dalio_agent(state):
             "return_on_equity": getattr(latest_metrics, "return_on_equity", None),
             "price_to_earnings": getattr(latest_metrics, "price_to_earnings", None),
             "dividend_yield": getattr(latest_metrics, "dividend_yield", None),
-            "market_cap": get_market_cap(ticker, end_date),
+            "market_cap": get_market_cap(current_ticker, end_date),
         },
         "financial_health": analyze_financial_health(latest_metrics, latest_financials),
         "cash_flow_stability": analyze_cash_flow_stability(latest_financials),
@@ -81,8 +82,8 @@ def ray_dalio_agent(state):
     }
     
     # Generate output
-    progress.update_status("ray_dalio_agent", ticker, "Generating investment signal")
-    signal = generate_dalio_output(ticker, analysis_data, model_name, model_provider)
+    progress.update_status("ray_dalio_agent", current_ticker, "Generating investment signal")
+    signal = generate_dalio_output(current_ticker, analysis_data, model_name, model_provider)
     
     # Store reasoning in state if show_agent_reasoning is available
     if "show_agent_reasoning" in globals():
